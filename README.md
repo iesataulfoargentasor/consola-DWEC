@@ -10,13 +10,13 @@ Está diseñada para el módulo de **Desarrollo Web en Entorno Cliente (DWEC)** 
 - **Consola simulada** que imita el formato de salida de Node.js (`console.log`, `console.error`, `console.warn`, `console.table`, etc.).
 - **Formateo inteligente de valores**: objetos, arrays, Mapas, Sets, fechas, expresiones regulares, funciones y referencias circulares.
 - **Ejemplos integrados** listos para ejecutar: Hola mundo, variables y tipos, operaciones aritméticas, estructuras de control, arrays, objetos, funciones y manejo de errores.
-- **Sin dependencias externas**: un único archivo HTML, sin librerías ni conexión a Internet.
+- **Sin dependencias externas**: HTML, CSS y JavaScript puro, sin librerías ni conexión a Internet.
 - **Interfaz oscura** estilo VS Code, responsive y adaptable a móviles.
 
 ## 🚀 Uso
 
-1. Descarga el archivo `mini-consola-js.html`.
-2. Ábrelo en cualquier navegador moderno (Chrome, Firefox, Edge, Safari).
+1. Descarga los tres archivos (`index.html`, `estilos.css`, `script.js`) en la misma carpeta.
+2. Abre `index.html` en cualquier navegador moderno (Chrome, Firefox, Edge, Safari).
 3. Escribe código JavaScript en el panel izquierdo.
 4. Pulsa **Ctrl+Enter** o el botón **▶ Ejecutar**.
 5. El resultado aparecerá en la consola de la derecha.
@@ -61,8 +61,10 @@ Esta herramienta está pensada para que los alumnos:
 
 ```
 consola-DWEC/
-├── mini-consola-js.html   # Aplicación completa (editor + consola)
-└── README.md              # Este archivo
+├── index.html       # Estructura de la página
+├── estilos.css      # Estilos (interfaz oscura estilo VS Code)
+├── script.js        # Lógica del editor y la consola
+└── README.md        # Este archivo
 ```
 
 ## 👨‍🏫 Contexto educativo

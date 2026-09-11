@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MiniConsola JS — Practica JavaScript</title>
+  <link rel="stylesheet" href="estilos.css" />
+</head>
+<body>
+  <header>
+    <h1>Mini<span class="js">JS</span> — Práctica de JavaScript</h1>
+    <div class="toolbar">
+      <button id="runBtn" title="Ejecutar el código (Ctrl+Enter)">▶ Ejecutar</button>
+      <button id="clearBtn" class="secondary" title="Borrar la consola">Limpiar</button>
+      <button id="examplesBtn" class="secondary" title="Ejemplos">Ejemplos</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="pane">
+      <div class="pane-label">
+        <span>editor.js</span>
+        <span>Ctrl+Enter para ejecutar</span>
+      </div>
+      <textarea id="editor" spellcheck="false" autocomplete="off"
+        autocorrect="off" autocapitalize="off"></textarea>
+    </section>
+
+    <section class="pane">
+      <div class="pane-label">
+        <span>consola</span>
+        <span>salida como Node.js</span>
+      </div>
+      <pre id="console"></pre>
+    </section>
+  </main>
+
+  <footer>
+    <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Ejecutar</span>
+    <span><kbd>Tab</kbd> inserta dos espacios</span>
+    <span>Hecho para el módulo de Desarrollo Web en Entorno Cliente</span>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
