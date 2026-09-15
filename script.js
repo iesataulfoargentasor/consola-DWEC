@@ -134,13 +134,56 @@ function makeConsole() {
   return c;
 }
 
+// ====================================================================
+// EJECUTAR CÓDIGO - MODIFICADO PARA MOSTRAR EXPRESIONES COMO NODE.JS REPL
+// ====================================================================
+
 function runCode() {
   const code = editor.value;
   clearConsole();
   const sandboxConsole = makeConsole();
 
   try {
-    const runner = new Function("console", '"use strict";\n' + code);
+    // Transformar el código: para cada línea que sea una expresión simple,
+    // añadir console.log() automáticamente (como hace Node.js REPL)
+    const lines = code.split('\n');
+    const transformedLines = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Saltar líneas vacías y comentarios
+      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
+        transformedLines.push(line);
+        continue;
+      }
+
+      // Verificar si ya tiene salida explícita
+      if (trimmed.match(/console\.(log|info|warn|error|debug|table|dir|group|assert|trace)\s*\(/)) {
+        transformedLines.push(line);
+        continue;
+      }
+
+      // Verificar si es una declaración o estructura de control
+      const isDeclaration = trimmed.match(/^[\s]*(let|const|var|function|if|for|while|do|switch|try|catch|finally|with|break|continue|return|throw|new|delete|class|import|export|async|await|yield|typeof)\b/);
+      const isClosingBrace = trimmed.match(/^[\s]*}/);
+      const isOpeningBrace = trimmed.match(/^[\s]*{/);
+      const hasSemicolon = trimmed.endsWith(';');
+
+      // Si es una expresión simple (no declaración, no llave, no punto y coma)
+      if (!isDeclaration && !isClosingBrace && !isOpeningBrace && !hasSemicolon && trimmed) {
+        // Añadir console.log() a la expresión
+        transformedLines.push('console.log((' + trimmed + '));');
+      } else {
+        transformedLines.push(line);
+      }
+    }
+
+    const transformedCode = transformedLines.join('\n');
+
+    // Ejecutar el código transformado
+    const runner = new Function("console", '"use strict";\n' + transformedCode);
     runner(sandboxConsole);
   } catch (err) {
     appendLine(`${err.name}: ${err.message}`, "console-error");
@@ -275,6 +318,7 @@ editor.addEventListener("keydown", (e) => {
     const end = editor.selectionEnd;
     editor.value =
       editor.value.slice(0, start) + "  " + editor.value.slice(end);
+
     editor.selectionStart = editor.selectionEnd = start + 2;
   }
   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
