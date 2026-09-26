@@ -135,8 +135,416 @@ function makeConsole() {
 }
 
 // ====================================================================
-// EJECUTAR CÓDIGO - MODIFICADO PARA MOSTRAR EXPRESIONES COMO NODE.JS REPL
+// EJECUTAR CÓDIGO
+// Las expresiones sueltas se muestran solas (como el REPL de Node).
+// No se reescribe línea a línea: un comentario al final, una coma o
+// un bloque de varias líneas no deben convertirse en un SyntaxError.
 // ====================================================================
+
+const STATEMENT_KEYWORDS =
+  /^(let|const|var|function|if|else|for|while|do|switch|try|catch|finally|break|continue|return|throw|class|import|export|debugger|with|case|default)\b/;
+
+function transformForRepl(code) {
+  return splitTopLevelStatements(code).map(wrapExpressionStatement).join("");
+}
+
+function wrapExpressionStatement(statement) {
+  const meaningful = stripComments(statement).trim();
+  if (!meaningful || meaningful.endsWith(";")) return statement;
+  if (meaningful.startsWith("{") || meaningful.startsWith("}")) return statement;
+  if (STATEMENT_KEYWORDS.test(meaningful)) return statement;
+  if (/^async\s+function\b/.test(meaningful)) return statement;
+  if (/console\.(log|info|warn|error|debug|table|dir|group|assert|trace|clear)\s*\(/.test(meaningful)) {
+    return statement;
+  }
+
+  const newline = statement.endsWith("\n") ? "\n" : "";
+  const body = newline ? statement.slice(0, -1) : statement;
+  const peeled = peelTrailingLineComment(body);
+  if (peeled.comment.includes("\n")) return statement;
+  const indent = (peeled.code.match(/^\s*/) || [""])[0];
+  const inner = peeled.code.trim();
+  if (!inner) return statement;
+  return indent + "console.log((" + inner + "));" + peeled.comment + newline;
+}
+
+function peelTrailingLineComment(body) {
+  let i = 0;
+  let quote = null;
+  let escape = false;
+  let block = false;
+  let template = false;
+  let commentAt = -1;
+
+  while (i < body.length) {
+    const c = body[i];
+    const n = body[i + 1];
+    if (block) {
+      if (c === "*" && n === "/") {
+        block = false;
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (quote) {
+      if (escape) {
+        escape = false;
+        i++;
+        continue;
+      }
+      if (c === "\\") {
+        escape = true;
+        i++;
+        continue;
+      }
+      if (c === quote) quote = null;
+      i++;
+      continue;
+    }
+    if (template) {
+      if (escape) {
+        escape = false;
+        i++;
+        continue;
+      }
+      if (c === "\\") {
+        escape = true;
+        i++;
+        continue;
+      }
+      if (c === "`") template = false;
+      i++;
+      continue;
+    }
+    if (c === "/" && n === "/") {
+      commentAt = i;
+      break;
+    }
+    if (c === "/" && n === "*") {
+      block = true;
+      i += 2;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      i++;
+      continue;
+    }
+    if (c === "`") {
+      template = true;
+      i++;
+      continue;
+    }
+    i++;
+  }
+
+  if (commentAt < 0) return { code: body, comment: "" };
+  return { code: body.slice(0, commentAt), comment: body.slice(commentAt) };
+}
+
+function stripComments(text) {
+  let out = "";
+  let i = 0;
+  let quote = null;
+  let escape = false;
+  let block = false;
+  let line = false;
+  let template = false;
+
+  while (i < text.length) {
+    const c = text[i];
+    const n = text[i + 1];
+    if (line) {
+      if (c === "\n") {
+        line = false;
+        out += c;
+      }
+      i++;
+      continue;
+    }
+    if (block) {
+      if (c === "\n") out += c;
+      if (c === "*" && n === "/") {
+        block = false;
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+    if (quote || template) {
+      out += c;
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (quote && c === quote) quote = null;
+      else if (template && c === "`") template = false;
+      i++;
+      continue;
+    }
+    if (c === "/" && n === "/") {
+      line = true;
+      i += 2;
+      continue;
+    }
+    if (c === "/" && n === "*") {
+      block = true;
+      i += 2;
+      continue;
+    }
+    if (c === "'" || c === '"') quote = c;
+    else if (c === "`") template = true;
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+function splitTopLevelStatements(code) {
+  const statements = [];
+  let start = 0;
+  let i = 0;
+  const stack = [];
+  let quote = null;
+  let escape = false;
+  let lineComment = false;
+  let blockComment = false;
+  let regex = false;
+  let regexClass = false;
+  let lastKind = "other";
+  let tail = "";
+
+  function balanced() {
+    return stack.length === 0 && !quote && !lineComment && !blockComment && !regex;
+  }
+
+  function note(kind, chars) {
+    lastKind = kind;
+    tail = (tail + chars).slice(-3);
+  }
+
+  function flush(end) {
+    if (end > start) statements.push(code.slice(start, end));
+    start = end;
+    lastKind = "other";
+    tail = "";
+  }
+
+  function endsWithContinuation() {
+    if (tail.endsWith("++") || tail.endsWith("--")) {
+      const before = tail.charAt(tail.length - 3);
+      if (before && /[0-9A-Za-z_$)\]}]/.test(before)) return false;
+    }
+    return /(?:\+\+|--|&&|\|\||\?\?|\?\.|=>|[+\-*/%&|^<>=!?:.,~])$/.test(tail);
+  }
+
+  function nextStartsWith(index, pattern) {
+    let j = index;
+    let block = false;
+    while (j < code.length) {
+      if (block) {
+        if (code[j] === "*" && code[j + 1] === "/") {
+          block = false;
+          j += 2;
+          continue;
+        }
+        j++;
+        continue;
+      }
+      if (code.startsWith("//", j)) {
+        j = code.indexOf("\n", j);
+        if (j < 0) return false;
+        j++;
+        continue;
+      }
+      if (code.startsWith("/*", j)) {
+        block = true;
+        j += 2;
+        continue;
+      }
+      if (/\s/.test(code[j])) {
+        j++;
+        continue;
+      }
+      return pattern.test(code.slice(j));
+    }
+    return false;
+  }
+
+  while (i < code.length) {
+    const c = code[i];
+    const n = code[i + 1];
+
+    if (lineComment) {
+      if (c === "\n") {
+        lineComment = false;
+        if (balanced() && !endsWithContinuation() && !nextStartsWith(i + 1, /^\.|\?\./)) {
+          i++;
+          flush(i);
+          continue;
+        }
+      }
+      i++;
+      continue;
+    }
+
+    if (blockComment) {
+      if (c === "*" && n === "/") {
+        blockComment = false;
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+
+    if (quote) {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === quote) {
+        quote = null;
+        note("operand", ")");
+      }
+      i++;
+      continue;
+    }
+
+    if (stack[stack.length - 1] === "template") {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === "`") {
+        stack.pop();
+        note("operand", ")");
+      } else if (c === "$" && n === "{") {
+        stack.push("tpl-expr");
+        i += 2;
+        continue;
+      }
+      i++;
+      continue;
+    }
+
+    if (regex) {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === "[") regexClass = true;
+      else if (c === "]" && regexClass) regexClass = false;
+      else if (c === "/" && !regexClass) {
+        regex = false;
+        note("operand", ")");
+      }
+      i++;
+      continue;
+    }
+
+    if (c === "/" && n === "/") {
+      lineComment = true;
+      i += 2;
+      continue;
+    }
+    if (c === "/" && n === "*") {
+      blockComment = true;
+      i += 2;
+      continue;
+    }
+    if (c === "/" && lastKind !== "operand") {
+      regex = true;
+      regexClass = false;
+      escape = false;
+      i++;
+      continue;
+    }
+    if (c === "'" || c === '"') {
+      quote = c;
+      escape = false;
+      i++;
+      continue;
+    }
+    if (c === "`") {
+      stack.push("template");
+      escape = false;
+      i++;
+      continue;
+    }
+
+    if (c === "(") {
+      stack.push("paren");
+      note("other", c);
+      i++;
+      continue;
+    }
+    if (c === "[") {
+      stack.push("bracket");
+      note("other", c);
+      i++;
+      continue;
+    }
+    if (c === "{") {
+      stack.push("brace");
+      note("other", c);
+      i++;
+      continue;
+    }
+    if (c === ")" && stack[stack.length - 1] === "paren") {
+      stack.pop();
+      note("operand", c);
+      i++;
+      continue;
+    }
+    if (c === "]" && stack[stack.length - 1] === "bracket") {
+      stack.pop();
+      note("operand", c);
+      i++;
+      continue;
+    }
+    if (c === "}") {
+      if (stack[stack.length - 1] === "brace" || stack[stack.length - 1] === "tpl-expr") {
+        stack.pop();
+      }
+      note("operand", c);
+      if (balanced() && !nextStartsWith(i + 1, /^(else|catch|finally|while)\b/)) {
+        let j = i + 1;
+        while (j < code.length && code[j] !== "\n" && /\s/.test(code[j])) j++;
+        if (code.startsWith("//", j)) {
+          j = code.indexOf("\n", j);
+          if (j < 0) j = code.length;
+        }
+        if (j >= code.length || code[j] === "\n") {
+          if (code[j] === "\n") j++;
+          i = j;
+          flush(i);
+          continue;
+        }
+      }
+      i++;
+      continue;
+    }
+
+    if (c === ";" && balanced()) {
+      i++;
+      while (i < code.length && code[i] !== "\n") i++;
+      if (code[i] === "\n") i++;
+      flush(i);
+      continue;
+    }
+
+    if (c === "\n" && balanced() && !endsWithContinuation() && !nextStartsWith(i + 1, /^\.|\?\.|^(else|catch|finally|while)\b/)) {
+      i++;
+      flush(i);
+      continue;
+    }
+
+    if (!/\s/.test(c)) {
+      if (/[A-Za-z0-9_$]/.test(c) || c === ")") note("operand", c);
+      else note("other", c);
+    }
+    i++;
+  }
+
+  flush(code.length);
+  return statements;
+}
 
 function runCode() {
   const code = editor.value;
@@ -144,45 +552,7 @@ function runCode() {
   const sandboxConsole = makeConsole();
 
   try {
-    // Transformar el código: para cada línea que sea una expresión simple,
-    // añadir console.log() automáticamente (como hace Node.js REPL)
-    const lines = code.split('\n');
-    const transformedLines = [];
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      // Saltar líneas vacías y comentarios
-      if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) {
-        transformedLines.push(line);
-        continue;
-      }
-
-      // Verificar si ya tiene salida explícita
-      if (trimmed.match(/console\.(log|info|warn|error|debug|table|dir|group|assert|trace)\s*\(/)) {
-        transformedLines.push(line);
-        continue;
-      }
-
-      // Verificar si es una declaración o estructura de control
-      const isDeclaration = trimmed.match(/^[\s]*(let|const|var|function|if|for|while|do|switch|try|catch|finally|with|break|continue|return|throw|new|delete|class|import|export|async|await|yield|typeof)\b/);
-      const isClosingBrace = trimmed.match(/^[\s]*}/);
-      const isOpeningBrace = trimmed.match(/^[\s]*{/);
-      const hasSemicolon = trimmed.endsWith(';');
-
-      // Si es una expresión simple (no declaración, no llave, no punto y coma)
-      if (!isDeclaration && !isClosingBrace && !isOpeningBrace && !hasSemicolon && trimmed) {
-        // Añadir console.log() a la expresión
-        transformedLines.push('console.log((' + trimmed + '));');
-      } else {
-        transformedLines.push(line);
-      }
-    }
-
-    const transformedCode = transformedLines.join('\n');
-
-    // Ejecutar el código transformado
+    const transformedCode = transformForRepl(code);
     const runner = new Function("console", '"use strict";\n' + transformedCode);
     runner(sandboxConsole);
   } catch (err) {
